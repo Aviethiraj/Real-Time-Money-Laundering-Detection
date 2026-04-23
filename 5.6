@@ -1,0 +1,117 @@
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.metrics import precision_recall_curve
+from sklearn.calibration import calibration_curve
+
+# --------------------------------------------------
+# 1. LOAD JSON
+# --------------------------------------------------
+with open(r"E:\Download\Avinash\dashboard_data.json", "r") as f:
+    data = json.load(f)
+
+# --------------------------------------------------
+# 2. MODEL METRICS (EDIT IF NEEDED)
+# --------------------------------------------------
+models = ["Rule-based", "XGBoost", "GNN", "Anomaly", "Ensemble"]
+
+precision_vals = [
+    0.08,  # example (update if you have real values)
+    data["xgboost"]["precision"],
+    data["gnn"]["precision"],
+    0.06,  # example
+    0.15   # example
+]
+
+recall_vals = [
+    0.30,
+    data["xgboost"]["recall"],
+    data["gnn"]["recall"],
+    0.40,
+    0.45
+]
+
+f1_vals = [
+    0.12,
+    data["xgboost"]["f1_score"],
+    data["gnn"]["f1_score"],
+    0.10,
+    0.22
+]
+
+# --------------------------------------------------
+# 3. BAR CHART (PRECISION / RECALL / F1)
+# --------------------------------------------------
+x = np.arange(len(models))
+width = 0.25
+
+plt.figure()
+plt.bar(x - width, precision_vals, width, label="Precision")
+plt.bar(x, recall_vals, width, label="Recall")
+plt.bar(x + width, f1_vals, width, label="F1 Score")
+
+plt.xticks(x, models, rotation=20)
+plt.ylabel("Score")
+plt.title("Model Comparison (Precision / Recall / F1)")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# --------------------------------------------------
+# 4. PR CURVES (OVERLAY)
+# --------------------------------------------------
+# ⚠️ Requires y_true and probabilities for each model
+
+if "y_true" in data:
+    y_true = np.array(data["y_true"])
+
+    plt.figure()
+
+    # Example: add models only if probabilities exist
+    if "xgb_proba" in data:
+        p, r, _ = precision_recall_curve(y_true, np.array(data["xgb_proba"]))
+        plt.plot(r, p, label="XGBoost")
+
+    if "gnn_proba" in data:
+        p, r, _ = precision_recall_curve(y_true, np.array(data["gnn_proba"]))
+        plt.plot(r, p, label="GNN")
+
+    if "ensemble_proba" in data:
+        p, r, _ = precision_recall_curve(y_true, np.array(data["ensemble_proba"]))
+        plt.plot(r, p, label="Ensemble")
+
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision–Recall Curves (Model Comparison)")
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("⚠️ PR curve skipped (y_true / probabilities not found in JSON)")
+
+# --------------------------------------------------
+# 5. CALIBRATION PLOT (OPTIONAL)
+# --------------------------------------------------
+if "y_true" in data and "gnn_proba" in data:
+    y_true = np.array(data["y_true"])
+    y_proba = np.array(data["gnn_proba"])
+
+    prob_true, prob_pred = calibration_curve(y_true, y_proba, n_bins=10)
+
+    plt.figure()
+    plt.plot(prob_pred, prob_true, marker='o', label="GNN")
+    plt.plot([0, 1], [0, 1], linestyle="--", label="Perfect Calibration")
+
+    plt.xlabel("Predicted Probability")
+    plt.ylabel("True Probability")
+    plt.title("Calibration Plot")
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("⚠️ Calibration plot skipped (missing probabilities)")
