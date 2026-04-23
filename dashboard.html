@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Money Laundering Detection Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header {
+      background: white; padding: 30px; border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px;
+    }
+    .header h1 { color: #333; margin-bottom: 10px; }
+    .header p { color: #666; font-size: 14px; }
+
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px; margin-bottom: 20px;
+    }
+    .metric-card {
+      background: white; padding: 25px; border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.3s ease;
+    }
+    .metric-card:hover { transform: translateY(-5px); }
+    .metric-label { color: #666; font-size: 14px; margin-bottom: 10px; }
+    .metric-value { font-size: 32px; font-weight: bold; color: #667eea; }
+    .metric-change { font-size: 12px; margin-top: 5px; }
+    .positive { color: #10b981; }
+    .negative { color: #ef4444; }
+
+    .charts-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      gap: 20px; margin-bottom: 20px;
+    }
+    .chart-card {
+      background: white; padding: 20px; border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .chart-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 15px; }
+
+    .table-card {
+      background: white; padding: 20px; border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #667eea; color: white; padding: 12px; text-align: left; font-weight: 600; }
+    td { padding: 12px; border-bottom: 1px solid #eee; }
+    tr:hover { background: #f9fafb; }
+
+    .status-badge {
+      padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      display: inline-block;
+    }
+    .status-critical { background: #fee2e2; color: #991b1b; }
+    .status-high { background: #fed7aa; color: #9a3412; }
+    .status-medium { background: #fef3c7; color: #92400e; }
+    .status-low { background: #d1fae5; color: #065f46; }
+
+    .hidden { display: none; }
+    .note { margin-top: 8px; font-size: 12px; color: #666; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🛡️ Real-Time Money Laundering Detection Dashboard</h1>
+      <p>Data loaded from: <code>dashboard_data.json</code></p>
+      <p class="note">If you want to use <b>E:\Download\Avinash\dashboard_data.json</b>, put this HTML in the same folder and run a local server from there.</p>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Model Accuracy</div>
+        <div class="metric-value" id="accuracy">--</div>
+        <div class="metric-change positive" id="accuracy-note">--</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">ROC-AUC Score</div>
+        <div class="metric-value" id="roc-auc">--</div>
+        <div class="metric-change positive" id="rocauc-note">--</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Transactions Analyzed</div>
+        <div class="metric-value" id="total-transactions">--</div>
+        <div class="metric-change">From dataset</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Suspicious Detected</div>
+        <div class="metric-value" id="suspicious-count">--</div>
+        <div class="metric-change negative">↓ Flagged for review</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Confusion Matrix - XGBoost</div>
+        <div id="confusion-matrix-xgb"></div>
+      </div>
+
+      <div class="chart-card" id="gnn-cm-card">
+        <div class="chart-title">Confusion Matrix - GNN</div>
+        <div id="confusion-matrix-gnn"></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Feature Importance (XGBoost) - Top 10</div>
+        <div id="feature-importance"></div>
+      </div>
+
+      <div class="chart-card" id="loss-card">
+        <div class="chart-title">GNN Training Loss</div>
+        <div id="training-loss"></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Model Comparison (Accuracy)</div>
+        <div id="model-comparison"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Model Comparison (ROC-AUC)</div>
+        <div id="model-comparison-rocauc"></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="chart-title">Top Features for Fraud Detection</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Feature</th>
+            <th>Importance</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody id="feature-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let modelResults = {};
+
+    // IMPORTANT:
+    // This fetch works when dashboard.html is served from the same folder as dashboard_data.json
+    // e.g., E:\Download\Avinash\ (served at http://localhost:8000/)
+    const DATA_URL = "./dashboard_data.json";
+
+    fetch(DATA_URL)
+      .then(r => {
+        if (!r.ok) throw new Error("Could not load " + DATA_URL);
+        return r.json();
+      })
+      .then(data => { modelResults = data; updateDashboard(); })
+      .catch(err => {
+        console.error(err);
+        alert(
+          "Failed to load dashboard_data.json.\n\n" +
+          "Fix:\n" +
+          "1) Put dashboard.html in E:\\Download\\Avinash\\\n" +
+          "2) Run: cd /d E:\\Download\\Avinash && python -m http.server 8000\n" +
+          "3) Open: http://localhost:8000/dashboard.html"
+        );
+      });
+
+    function pickBest(metricName) {
+      if (modelResults.ensemble && modelResults.ensemble[metricName] != null) return { name: "Ensemble", val: modelResults.ensemble[metricName] };
+      if (modelResults.gnn && modelResults.gnn[metricName] != null) return { name: "GNN", val: modelResults.gnn[metricName] };
+      if (modelResults.xgboost && modelResults.xgboost[metricName] != null) return { name: "XGBoost", val: modelResults.xgboost[metricName] };
+      return { name: "N/A", val: null };
+    }
+
+    function updateDashboard() {
+      const bestAcc = pickBest("accuracy");
+      const bestAuc = pickBest("roc_auc");
+
+      document.getElementById("accuracy").textContent =
+        bestAcc.val == null ? "--" : (bestAcc.val * 100).toFixed(2) + "%";
+      document.getElementById("roc-auc").textContent =
+        bestAuc.val == null ? "--" : bestAuc.val.toFixed(4);
+
+      document.getElementById("accuracy-note").textContent = "From: " + bestAcc.name;
+      document.getElementById("rocauc-note").textContent = "From: " + bestAuc.name;
+
+      document.getElementById("total-transactions").textContent =
+        (modelResults.total_transactions ?? 0).toLocaleString();
+      document.getElementById("suspicious-count").textContent =
+        (modelResults.suspicious_count ?? 0).toLocaleString();
+
+      if (modelResults.xgboost?.confusion_matrix) {
+        createConfusionMatrix("confusion-matrix-xgb", modelResults.xgboost.confusion_matrix, "Blues");
+      }
+
+      const gnnCard = document.getElementById("gnn-cm-card");
+      if (modelResults.gnn?.confusion_matrix) {
+        gnnCard.classList.remove("hidden");
+        createConfusionMatrix("confusion-matrix-gnn", modelResults.gnn.confusion_matrix, "Purples");
+      } else {
+        gnnCard.classList.add("hidden");
+      }
+
+      if (modelResults.features?.length) createFeatureImportance();
+
+      const lossCard = document.getElementById("loss-card");
+      if (Array.isArray(modelResults.training_losses) && modelResults.training_losses.length) {
+        lossCard.classList.remove("hidden");
+        createTrainingLoss();
+      } else {
+        lossCard.classList.add("hidden");
+      }
+
+      createModelComparisonAccuracy();
+      createModelComparisonRocAuc();
+      populateFeatureTable();
+    }
+
+    function createConfusionMatrix(elementId, matrix, colorscale) {
+      const data = [{
+        z: matrix,
+        x: ["Predicted Normal", "Predicted Laundering"],
+        y: ["Actual Normal", "Actual Laundering"],
+        type: "heatmap",
+        colorscale,
+        showscale: true,
+        text: matrix,
+        texttemplate: "%{text}",
+        hovertemplate: "Count: %{z}<extra></extra>"
+      }];
+
+      const layout = { margin: { t: 10, l: 120, r: 10, b: 60 }, height: 320 };
+      Plotly.newPlot(elementId, data, layout, { responsive: true });
+    }
+
+    function createFeatureImportance() {
+      const features = modelResults.features.slice(0, 10).reverse();
+      const data = [{
+        x: features.map(f => f.importance),
+        y: features.map(f => f.name),
+        type: "bar",
+        orientation: "h",
+        marker: { color: "rgba(102, 126, 234, 0.85)" },
+        hovertemplate: "%{y}<br>Importance: %{x:.4f}<extra></extra>"
+      }];
+      const layout = { margin: { t: 10, l: 180, r: 10, b: 50 }, height: 320, xaxis: { title: "Importance Score" } };
+      Plotly.newPlot("feature-importance", data, layout, { responsive: true });
+    }
+
+    function createTrainingLoss() {
+      const data = [{
+        y: modelResults.training_losses,
+        type: "scatter",
+        mode: "lines",
+        line: { color: "rgba(118, 75, 162, 0.85)", width: 2 }
+      }];
+      const layout = { margin: { t: 10, l: 60, r: 10, b: 50 }, height: 320, xaxis: { title: "Epoch" }, yaxis: { title: "Loss" } };
+      Plotly.newPlot("training-loss", data, layout, { responsive: true });
+    }
+
+    function createModelComparisonAccuracy() {
+      const rows = [
+        { name: "XGBoost", val: modelResults.xgboost?.accuracy },
+        { name: "GNN", val: modelResults.gnn?.accuracy },
+        { name: "Ensemble", val: modelResults.ensemble?.accuracy }
+      ].filter(r => r.val != null);
+
+      const data = [{
+        x: rows.map(r => r.name),
+        y: rows.map(r => r.val),
+        type: "bar",
+        marker: { color: ["#667eea", "#764ba2", "#10b981"].slice(0, rows.length) }
+      }];
+
+      const layout = { margin: { t: 10, l: 60, r: 10, b: 50 }, height: 320, yaxis: { title: "Accuracy", range: [0, 1] } };
+      Plotly.newPlot("model-comparison", data, layout, { responsive: true });
+    }
+
+    function createModelComparisonRocAuc() {
+      const rows = [
+        { name: "XGBoost", val: modelResults.xgboost?.roc_auc },
+        { name: "GNN", val: modelResults.gnn?.roc_auc },
+        { name: "Ensemble", val: modelResults.ensemble?.roc_auc }
+      ].filter(r => r.val != null);
+
+      const data = [{
+        x: rows.map(r => r.name),
+        y: rows.map(r => r.val),
+        type: "bar",
+        marker: { color: ["#667eea", "#764ba2", "#10b981"].slice(0, rows.length) }
+      }];
+
+      const layout = { margin: { t: 10, l: 60, r: 10, b: 50 }, height: 320, yaxis: { title: "ROC-AUC", range: [0, 1] } };
+      Plotly.newPlot("model-comparison-rocauc", data, layout, { responsive: true });
+    }
+
+    function populateFeatureTable() {
+      const tbody = document.getElementById("feature-table");
+      const features = modelResults.features || [];
+      tbody.innerHTML = features.map((f, i) => {
+        const impact = String(f.impact || "Low").toLowerCase();
+        const safe = ["critical","high","medium","low"].includes(impact) ? impact : "low";
+        return `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(f.name)}</td>
+            <td>${(Number(f.importance) * 100).toFixed(2)}%</td>
+            <td><span class="status-badge status-${safe}">${escapeHtml(f.impact || "Low")}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>
