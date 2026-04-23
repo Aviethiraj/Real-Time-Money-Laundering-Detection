@@ -1,0 +1,184 @@
+
+
+# Install (if needed):
+# pip install pandas numpy matplotlib seaborn openpyxl
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set(style="whitegrid", context="talk")
+
+# -----------------------------
+# Load data
+# -----------------------------
+FILE_PATH = r"E:\Download\SAML-D.xlsx"  # change if needed
+
+df = pd.read_excel(FILE_PATH, engine="openpyxl")
+
+# Basic column checks (adjust names if your file differs)
+required_cols = ["Amount", "Payment_type", "Payment_currency", "Received_currency", "Is_laundering"]
+missing = [c for c in required_cols if c not in df.columns]
+if missing:
+    raise ValueError(f"Missing columns in dataset: {missing}")
+
+# Ensure Amount is numeric
+df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
+df = df.dropna(subset=["Amount"])
+
+# Ensure label is 0/1
+df["Is_laundering"] = pd.to_numeric(df["Is_laundering"], errors="coerce").fillna(0).astype(int)
+
+# Optional: nicer label for plotting
+df["Class"] = np.where(df["Is_laundering"] == 1, "Laundering", "Normal")
+
+print("Rows:", len(df))
+print("Laundering ratio:", df["Is_laundering"].mean())
+
+# -----------------------------
+# Helper: top-N category counts
+# -----------------------------
+def plot_top_counts(dataframe, col, top_n=10, title=None, figsize=(12, 6), rotate=25):
+    vc = dataframe[col].astype(str).value_counts().head(top_n)
+    plt.figure(figsize=figsize)
+    ax = sns.barplot(x=vc.index, y=vc.values, color="#4C72B0")
+    ax.set_xlabel(col)
+    ax.set_ylabel("Count")
+    ax.set_title(title or f"Top {top_n} {col} by Count")
+    plt.xticks(rotation=rotate, ha="right")
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 1) Amount histogram (linear)
+# -----------------------------
+plt.figure(figsize=(12, 6))
+sns.histplot(df, x="Amount", bins=50, kde=False, color="#4C72B0")
+plt.title("Distribution of Transaction Amounts (Overall)")
+plt.xlabel("Amount")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+# Overlay Normal vs Laundering (linear scale)
+plt.figure(figsize=(12, 6))
+sns.histplot(
+    df,
+    x="Amount",
+    hue="Class",
+    bins=60,
+    element="step",
+    stat="count",
+    common_norm=False,
+    alpha=0.4
+)
+plt.title("Transaction Amount Distribution: Normal vs Laundering (Linear Scale)")
+plt.xlabel("Amount")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 2) Amount histogram (log scale)
+#    NOTE: works best if Amount > 0
+# -----------------------------
+df_pos = df[df["Amount"] > 0].copy()
+
+plt.figure(figsize=(12, 6))
+sns.histplot(df_pos, x="Amount", bins=60, kde=False, color="#55A868")
+plt.xscale("log")
+plt.title("Distribution of Transaction Amounts (Log Scale, Overall)")
+plt.xlabel("Amount (log scale)")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+# Overlay Normal vs Laundering (log scale)
+plt.figure(figsize=(12, 6))
+sns.histplot(
+    df_pos,
+    x="Amount",
+    hue="Class",
+    bins=80,
+    element="step",
+    stat="count",
+    common_norm=False,
+    alpha=0.4
+)
+plt.xscale("log")
+plt.title("Transaction Amount Distribution: Normal vs Laundering (Log Scale)")
+plt.xlabel("Amount (log scale)")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+# Alternative: log1p transform histogram (often cleaner than xscale log)
+plt.figure(figsize=(12, 6))
+sns.histplot(
+    df,
+    x=np.log1p(df["Amount"]),
+    hue="Class",
+    bins=80,
+    element="step",
+    stat="count",
+    common_norm=False,
+    alpha=0.4
+)
+plt.title("Transaction Amount Distribution (log1p Amount): Normal vs Laundering")
+plt.xlabel("log1p(Amount)")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 3) Count bar charts (top N)
+# -----------------------------
+TOP_N = 10
+plot_top_counts(df, "Payment_type", top_n=TOP_N, title=f"Top {TOP_N} Payment Types by Count")
+plot_top_counts(df, "Payment_currency", top_n=TOP_N, title=f"Top {TOP_N} Payment Currencies by Count")
+plot_top_counts(df, "Received_currency", top_n=TOP_N, title=f"Top {TOP_N} Received Currencies by Count")
+
+# -----------------------------
+# 4) Optional: laundering proportion by payment type
+#    - stacked bar chart (Normal vs Laundering counts)
+#    - bar chart of laundering rate (proportion)
+# -----------------------------
+# Pick top payment types to keep charts readable
+top_types = df["Payment_type"].astype(str).value_counts().head(TOP_N).index
+dff = df[df["Payment_type"].astype(str).isin(top_types)].copy()
+dff["Payment_type"] = dff["Payment_type"].astype(str)
+
+# Stacked bar: counts by class
+counts = (
+    dff.groupby(["Payment_type", "Class"])
+       .size()
+       .unstack(fill_value=0)
+       .loc[top_types]  # keep top order
+)
+
+ax = counts.plot(kind="bar", stacked=True, figsize=(14, 7), color=["#4C72B0", "#C44E52"])
+ax.set_title(f"Normal vs Laundering Counts by Payment Type (Top {TOP_N})")
+ax.set_xlabel("Payment_type")
+ax.set_ylabel("Count")
+plt.xticks(rotation=25, ha="right")
+plt.tight_layout()
+plt.show()
+
+# Laundering proportion (rate) by payment type
+rate = (
+    dff.groupby("Payment_type")["Is_laundering"]
+       .mean()
+       .reindex(top_types)
+       .sort_values(ascending=False)
+)
+
+plt.figure(figsize=(14, 6))
+ax = sns.barplot(x=rate.index, y=rate.values, color="#C44E52")
+ax.set_title(f"Laundering Proportion by Payment Type (Top {TOP_N})")
+ax.set_xlabel("Payment_type")
+ax.set_ylabel("Laundering proportion")
+plt.xticks(rotation=25, ha="right")
+plt.ylim(0, max(0.01, rate.max() * 1.2))
+plt.tight_layout()
+plt.show()
